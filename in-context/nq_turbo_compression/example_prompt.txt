@@ -1,0 +1,20 @@
+Q:Which British politician was the first person to be made an Honorary Citizen of the United States of America?
+A:Winston Churchill
+
+Q:Which event of 1962 is the subject of the 2000 film Thirteen Days’, starring Kevin Costner?
+A:The Cuban Missile Crisis
+
+Q:Which country hosted the 1968 Summer Olympics?
+A:Mexico
+
+Q:In which city did the assassination of Martin Luther King?
+A:MEMPHIS, Tennessee
+
+Q:Which German rye bread is named, according to many reliable sources, from the original meaning 'Devil's fart'?
+A:Pumpernickel
+
+Physicist Wilhelm Röntgen was the first person to be awarded the Nobel Prize in Physics in 1901 for his discovery of x-rays. The Nobel Prize in Physics is one of the five Nobel Prizes established by Alfred Nobel in 1895.
+
+Based on this text, answer these questions:
+Q: who got the first nobel prize in physics?
+A:

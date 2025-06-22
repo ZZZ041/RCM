@@ -1,0 +1,7 @@
+auth_token                       None
+cache_dir                        None
+dataset_path                     nq_5shot_top_5_passage_t5_compression.json
+model_name                       meta-llama/Llama-2-7b-chat-hf
+model_parallelism                False
+num_docs                         1
+output_dir                       nq_t5_compression

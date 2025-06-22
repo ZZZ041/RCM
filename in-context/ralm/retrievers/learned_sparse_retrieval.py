@@ -1,0 +1,100 @@
+import json
+import multiprocessing
+
+from ralm.retrievers.base_retrieval import BaseRetriever
+from pyserini.search.lucene import LuceneImpactSearcher
+
+
+class SparseRetriever(BaseRetriever):
+    # 初始化稀疏检索器
+    def __init__(self, tokenizer, index_name, num_tokens_for_query, forbidden_titles_path):
+        super(SparseRetriever, self).__init__(tokenizer=tokenizer)
+        self.searcher = self._get_searcher(index_name)
+        self.num_tokens_for_query = num_tokens_for_query
+        self.forbidden_titles = self._get_forbidden_titles(forbidden_titles_path)
+
+    # 获取Lucene搜索器，尝试从Pyserini的预构建索引下载搜索器。如果索引不存在，尝试将索引作为本地目录读取。
+    def _get_searcher(self, index_name):
+        try:
+            print(f"Attempting to download the index as if prebuilt by pyserini")
+            return LuceneImpactSearcher.from_prebuilt_index(index_name,'naver/splade-cocondenser-ensembledistil')
+        except ValueError:
+            print(f"Index does not exist in pyserini.")
+            print("Attempting to treat the index as a directory (not prebuilt by pyserini)")
+            return LuceneImpactSearcher(index_name)
+
+    # 从指定路径加载禁止的标题列表
+    def _get_forbidden_titles(self, forbidden_titles_path):
+        if forbidden_titles_path is None:
+            return []
+        with open(forbidden_titles_path, "r", encoding='utf-8') as f:
+            forbidden_titles = [line.strip() for line in f]
+        return set(forbidden_titles)
+
+    # 从检索到的文档中提取标题
+    def _get_title_from_retrieved_document(self, doc):
+        title, _ = doc.split("\n")
+        if title.startswith('"') and title.endswith('"'):
+            title = title[1:-1]
+        return title
+
+    # 使用给定的查询字符串执行检索，每次检索k个文档。它会检查每个文档的标题是否在禁止列表中。如果不是，则返回该文档的内容。k逐渐增大，直到找到合适的文档。
+    def _retrieve_no_forbidden(self, query_str):
+        k = 16
+        prev_k = 0
+        while True:
+            retrieved_res = self.searcher.search(query_str, k=k)
+            for idx in range(prev_k, k):
+                res_dict = json.loads(retrieved_res[idx].raw)
+                context_str = res_dict["contents"]
+                title = self._get_title_from_retrieved_document(context_str)
+                if title not in self.forbidden_titles:
+                    return context_str
+            prev_k = k
+            k *= 2
+
+    # 生成用于检索的查询字符串。它通过截取输入序列的前缀部分（从序列开头到目标开始位置），然后选取最后 num_tokens_for_query 个 token，最后将这些 token 解码为查询字符串。
+    def _get_query_string(self, sequence_input_ids, target_begin_location, target_end_location, title=None):
+        # We isolate the prefix to make sure that we don't take tokens from the future:
+        prefix_tokens = sequence_input_ids[0, :target_begin_location]
+        query_tokens = prefix_tokens[-self.num_tokens_for_query:]
+        query_str = self.tokenizer.decode(query_tokens)
+        return query_str
+
+    def retrieve(self, sequence_input_ids, dataset, k=1):
+        queries = [
+            self._get_query_string(
+                sequence_input_ids,
+                d["begin_location"],
+                d["end_location"],
+                d["title"] if "title" in d else None
+            )
+            for d in dataset
+        ]
+        assert len(queries) == len(dataset)
+        all_res = self.searcher.batch_search(
+            queries,
+            qids=[str(i) for i in range(len(queries))],
+            k=max(100, 4*k) if self.forbidden_titles else k,
+            threads=multiprocessing.cpu_count()
+        )
+        # print(dir(all_res))
+        for qid, res in all_res.items():
+            qid = int(qid)
+            d = dataset[qid]
+            d["query"] = queries[qid]
+            allowed_docs = []
+
+
+            for hit in res:
+
+
+                res_dict = json.loads(hit.lucene_document.get('raw'))
+                context_str = res_dict["contents"]
+                title = self._get_title_from_retrieved_document(context_str)
+                if title not in self.forbidden_titles:
+                    allowed_docs.append({"text": context_str, "score": hit.score})
+                    if len(allowed_docs) >= k:
+                        break
+            d["retrieved_docs"] = allowed_docs
+        return dataset
